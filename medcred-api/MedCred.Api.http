@@ -1,0 +1,6 @@
+@MedCred.Api_HostAddress = http://localhost:5229
+
+GET {{MedCred.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
