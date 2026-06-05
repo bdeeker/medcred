@@ -1,6 +1,7 @@
 using Amazon;
 using Amazon.SimpleEmail;
 using Amazon.SimpleEmail.Model;
+using Amazon.Runtime;
 using MedCred.Api.Data;
 using MedCred.Api.Models;
 
@@ -41,12 +42,21 @@ public class AlertService
 
         try
         {
+            var accessKey = Environment.GetEnvironmentVariable("Aws__AccessKey")
+                ?? _config["Aws:AccessKey"];
+            var secretKey = Environment.GetEnvironmentVariable("Aws__SecretKey")
+                ?? _config["Aws:SecretKey"];
+            var region = _config["Aws:Region"] ?? "us-east-1";
+            var fromEmail = _config["Aws:SesFromEmail"];
+
+            var credentials = new BasicAWSCredentials(accessKey, secretKey);
             using var client = new AmazonSimpleEmailServiceClient(
-                RegionEndpoint.GetBySystemName(_config["Aws:Region"] ?? "us-east-1"));
+                credentials,
+                RegionEndpoint.GetBySystemName(region));
 
             var request = new SendEmailRequest
             {
-                Source = _config["Aws:SesFromEmail"],
+                Source = fromEmail,
                 Destination = new Destination { ToAddresses = new List<string> { orgEmail } },
                 Message = new Message
                 {
@@ -57,7 +67,6 @@ public class AlertService
 
             await client.SendEmailAsync(request);
 
-            // Log the alert
             db.AlertLogs.Add(new AlertLog
             {
                 CredentialId = credential.Id,

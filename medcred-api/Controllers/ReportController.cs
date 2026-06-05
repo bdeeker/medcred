@@ -27,12 +27,12 @@ public class ReportController : ControllerBase
         var report = staff.Select(s => new
         {
             s.Id,
-            Name            = $"{s.FirstName} {s.LastName}",
+            Name = $"{s.FirstName} {s.LastName}",
             s.Department,
-            Total           = s.Credentials.Count,
-            Active          = s.Credentials.Count(c => c.Status == "Active"),
-            Expiring        = s.Credentials.Count(c => c.Status == "Expiring"),
-            Expired         = s.Credentials.Count(c => c.Status == "Expired"),
+            Total = s.Credentials.Count,
+            Active = s.Credentials.Count(c => c.Status == "Active"),
+            Expiring = s.Credentials.Count(c => c.Status == "Expiring"),
+            Expired = s.Credentials.Count(c => c.Status == "Expired"),
             ComplianceScore = s.Credentials.Count == 0
                 ? 100
                 : (int)((double)s.Credentials.Count(c => c.Status == "Active") / s.Credentials.Count * 100)
@@ -45,7 +45,7 @@ public class ReportController : ControllerBase
     public async Task<IActionResult> GetExpiring([FromQuery] int days = 30)
     {
         var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(days));
-        var today  = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         var credentials = await _db.Credentials
             .Include(c => c.StaffMember)
@@ -58,7 +58,7 @@ public class ReportController : ControllerBase
             .Select(c => new
             {
                 c.Id,
-                StaffMember    = $"{c.StaffMember.FirstName} {c.StaffMember.LastName}",
+                StaffMember = $"{c.StaffMember.FirstName} {c.StaffMember.LastName}",
                 c.StaffMember.Department,
                 CredentialType = c.CredentialType.Name,
                 c.ExpiryDate,
@@ -80,9 +80,9 @@ public class ReportController : ControllerBase
             {
                 Department = g.Key,
                 StaffCount = g.Count(),
-                Expired    = g.Sum(s => s.Credentials.Count(c => c.Status == "Expired")),
-                Expiring   = g.Sum(s => s.Credentials.Count(c => c.Status == "Expiring")),
-                Active     = g.Sum(s => s.Credentials.Count(c => c.Status == "Active"))
+                Expired = g.Sum(s => s.Credentials.Count(c => c.Status == "Expired")),
+                Expiring = g.Sum(s => s.Credentials.Count(c => c.Status == "Expiring")),
+                Active = g.Sum(s => s.Credentials.Count(c => c.Status == "Active"))
             })
             .OrderBy(d => d.Department)
             .ToListAsync();
@@ -113,12 +113,12 @@ public class ReportController : ControllerBase
 
         var rows = staff.Select(s => new
         {
-            Name            = $"{s.FirstName} {s.LastName}",
+            Name = $"{s.FirstName} {s.LastName}",
             s.Department,
-            Total           = s.Credentials.Count,
-            Active          = s.Credentials.Count(c => c.Status == "Active"),
-            Expiring        = s.Credentials.Count(c => c.Status == "Expiring"),
-            Expired         = s.Credentials.Count(c => c.Status == "Expired"),
+            Total = s.Credentials.Count,
+            Active = s.Credentials.Count(c => c.Status == "Active"),
+            Expiring = s.Credentials.Count(c => c.Status == "Expiring"),
+            Expired = s.Credentials.Count(c => c.Status == "Expired"),
             ComplianceScore = s.Credentials.Count == 0
                 ? 100
                 : (int)((double)s.Credentials.Count(c => c.Status == "Active") / s.Credentials.Count * 100)
@@ -137,7 +137,7 @@ public class ReportController : ControllerBase
     public async Task<IActionResult> ExportExpiring([FromQuery] int days = 30)
     {
         var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(days));
-        var today  = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         var rows = await _db.Credentials
             .Include(c => c.StaffMember)
@@ -149,9 +149,9 @@ public class ReportController : ControllerBase
             .OrderBy(c => c.ExpiryDate)
             .Select(c => new
             {
-                StaffMember     = $"{c.StaffMember.FirstName} {c.StaffMember.LastName}",
+                StaffMember = $"{c.StaffMember.FirstName} {c.StaffMember.LastName}",
                 c.StaffMember.Department,
-                CredentialType  = c.CredentialType.Name,
+                CredentialType = c.CredentialType.Name,
                 c.ExpiryDate,
                 DaysUntilExpiry = c.ExpiryDate.DayNumber - today.DayNumber
             })
@@ -177,9 +177,9 @@ public class ReportController : ControllerBase
             {
                 Department = g.Key,
                 StaffCount = g.Count(),
-                Active     = g.Sum(s => s.Credentials.Count(c => c.Status == "Active")),
-                Expiring   = g.Sum(s => s.Credentials.Count(c => c.Status == "Expiring")),
-                Expired    = g.Sum(s => s.Credentials.Count(c => c.Status == "Expired"))
+                Active = g.Sum(s => s.Credentials.Count(c => c.Status == "Active")),
+                Expiring = g.Sum(s => s.Credentials.Count(c => c.Status == "Expiring")),
+                Expired = g.Sum(s => s.Credentials.Count(c => c.Status == "Expired"))
             })
             .OrderBy(d => d.Department)
             .ToListAsync();
