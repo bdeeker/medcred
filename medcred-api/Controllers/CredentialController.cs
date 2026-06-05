@@ -95,7 +95,7 @@ public class CredentialController : ControllerBase
 
         _db.AuditLogs.Add(new AuditLog
         {
-            UserId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "",
+            UserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "",
             Action = "Created",
             Entity = "Credential",
             Details = $"{credType.Name} for {staff.FirstName} {staff.LastName}"
@@ -123,7 +123,7 @@ public class CredentialController : ControllerBase
 
         _db.AuditLogs.Add(new AuditLog
         {
-            UserId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "",
+            UserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "",
             Action = "Updated",
             Entity = "Credential",
             Details = $"{credential.CredentialType.Name} for {credential.StaffMember.FirstName} {credential.StaffMember.LastName}"
@@ -139,6 +139,32 @@ public class CredentialController : ControllerBase
     {
         var types = await _db.CredentialTypes.OrderBy(t => t.Name).ToListAsync();
         return Ok(types);
+    }
+
+    // POST api/credential/types
+    [HttpPost("types")]
+    public async Task<IActionResult> CreateType([FromBody] CredentialTypeDto dto)
+    {
+        var type = new CredentialType
+        {
+            Name = dto.Name,
+            WarnDaysAhead = dto.WarnDaysAhead,
+            IsRequired = dto.IsRequired
+        };
+        _db.CredentialTypes.Add(type);
+        await _db.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetTypes), new { id = type.Id }, type);
+    }
+
+    // DELETE api/credential/types/{id}
+    [HttpDelete("types/{id}")]
+    public async Task<IActionResult> DeleteType(Guid id)
+    {
+        var type = await _db.CredentialTypes.FindAsync(id);
+        if (type == null) return NotFound();
+        _db.CredentialTypes.Remove(type);
+        await _db.SaveChangesAsync();
+        return NoContent();
     }
 
     // GET api/credential/dashboard
@@ -190,3 +216,5 @@ public record CredentialDto(
     DateOnly IssuedDate,
     DateOnly ExpiryDate,
     string? FileUrl = null);
+
+public record CredentialTypeDto(string Name, int WarnDaysAhead, bool IsRequired);

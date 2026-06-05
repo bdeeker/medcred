@@ -13,21 +13,15 @@ namespace MedCred.Api.Controllers;
 public class StaffController : ControllerBase
 {
     private readonly AppDbContext _db;
-
-    public StaffController(AppDbContext db)
-    {
-        _db = db;
-    }
+    public StaffController(AppDbContext db) { _db = db; }
 
     private Guid OrgId => Guid.Parse(User.FindFirstValue("orgId")!);
 
-    // GET api/staff
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var staff = await _db.StaffMembers
             .Where(s => s.OrganizationId == OrgId)
-            .OrderBy(s => s.LastName)
             .Select(s => new
             {
                 s.Id,
@@ -40,12 +34,12 @@ public class StaffController : ControllerBase
                 ExpiringCount = s.Credentials.Count(c => c.Status == "Expiring"),
                 ExpiredCount = s.Credentials.Count(c => c.Status == "Expired")
             })
+            .OrderBy(s => s.LastName)
             .ToListAsync();
 
         return Ok(staff);
     }
 
-    // GET api/staff/{id}
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
@@ -55,27 +49,49 @@ public class StaffController : ControllerBase
             .FirstOrDefaultAsync(s => s.Id == id && s.OrganizationId == OrgId);
 
         if (staff == null) return NotFound();
-        return Ok(staff);
+
+        return Ok(new
+        {
+            staff.Id,
+            staff.FirstName,
+            staff.LastName,
+            staff.Department,
+            staff.LicenseNumber,
+            staff.IsActive,
+            Credentials = staff.Credentials.Select(c => new
+            {
+                c.Id,
+                c.Status,
+                c.IssuedDate,
+                c.ExpiryDate,
+                c.FileUrl,
+                CredentialType = new
+                {
+                    c.CredentialType.Id,
+                    c.CredentialType.Name
+                }
+            })
+        });
     }
 
-    // POST api/staff
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] StaffDto dto)
     {
         var staff = new StaffMember
         {
-            OrganizationId = OrgId,
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             Department = dto.Department,
-            LicenseNumber = dto.LicenseNumber
+            LicenseNumber = dto.LicenseNumber,
+            OrganizationId = OrgId,
+            IsActive = true
         };
 
         _db.StaffMembers.Add(staff);
 
         _db.AuditLogs.Add(new AuditLog
         {
-            UserId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "",
+            UserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "",
             Action = "Created",
             Entity = "StaffMember",
             Details = $"{dto.FirstName} {dto.LastName}"
@@ -85,7 +101,6 @@ public class StaffController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = staff.Id }, staff);
     }
 
-    // PUT api/staff/{id}
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] StaffDto dto)
     {
@@ -102,7 +117,7 @@ public class StaffController : ControllerBase
 
         _db.AuditLogs.Add(new AuditLog
         {
-            UserId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "",
+            UserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "",
             Action = "Updated",
             Entity = "StaffMember",
             Details = $"{dto.FirstName} {dto.LastName}"
@@ -112,7 +127,6 @@ public class StaffController : ControllerBase
         return Ok(staff);
     }
 
-    // DELETE api/staff/{id}
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
@@ -122,6 +136,15 @@ public class StaffController : ControllerBase
         if (staff == null) return NotFound();
 
         staff.IsActive = false;
+
+        _db.AuditLogs.Add(new AuditLog
+        {
+            UserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "",
+            Action = "Deactivated",
+            Entity = "StaffMember",
+            Details = $"{staff.FirstName} {staff.LastName}"
+        });
+
         await _db.SaveChangesAsync();
         return NoContent();
     }

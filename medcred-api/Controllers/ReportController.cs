@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 using MedCred.Api.Data;
+using System.Security.Claims;
 
 namespace MedCred.Api.Controllers;
 
@@ -12,71 +12,42 @@ namespace MedCred.Api.Controllers;
 public class ReportController : ControllerBase
 {
     private readonly AppDbContext _db;
-
-    public ReportController(AppDbContext db)
-    {
-        _db = db;
-    }
+    public ReportController(AppDbContext db) { _db = db; }
 
     private Guid OrgId => Guid.Parse(User.FindFirstValue("orgId")!);
 
-    // GET api/report/compliance
     [HttpGet("compliance")]
-    public async Task<IActionResult> GetComplianceReport()
+    public async Task<IActionResult> GetCompliance()
     {
         var staff = await _db.StaffMembers
             .Include(s => s.Credentials)
-                .ThenInclude(c => c.CredentialType)
             .Where(s => s.OrganizationId == OrgId && s.IsActive)
-            .OrderBy(s => s.LastName)
-            .ToListAsync();
-
-        var requiredTypes = await _db.CredentialTypes
-            .Where(ct => ct.IsRequired)
             .ToListAsync();
 
         var report = staff.Select(s => new
         {
             s.Id,
-            s.FirstName,
-            s.LastName,
+            Name            = $"{s.FirstName} {s.LastName}",
             s.Department,
-            ComplianceStatus = s.Credentials.Any(c => c.Status == "Expired") ? "Non-Compliant"
-                : s.Credentials.Any(c => c.Status == "Expiring") ? "At Risk"
-                : "Compliant",
-            MissingCredentials = requiredTypes
-                .Where(rt => !s.Credentials.Any(c => c.CredentialTypeId == rt.Id))
-                .Select(rt => rt.Name)
-                .ToList(),
-            Credentials = s.Credentials.Select(c => new
-            {
-                c.Id,
-                Type = c.CredentialType.Name,
-                c.ExpiryDate,
-                c.Status
-            })
-        });
+            Total           = s.Credentials.Count,
+            Active          = s.Credentials.Count(c => c.Status == "Active"),
+            Expiring        = s.Credentials.Count(c => c.Status == "Expiring"),
+            Expired         = s.Credentials.Count(c => c.Status == "Expired"),
+            ComplianceScore = s.Credentials.Count == 0
+                ? 100
+                : (int)((double)s.Credentials.Count(c => c.Status == "Active") / s.Credentials.Count * 100)
+        }).OrderBy(s => s.ComplianceScore);
 
-        var summary = new
-        {
-            TotalStaff = staff.Count,
-            Compliant = report.Count(r => r.ComplianceStatus == "Compliant"),
-            AtRisk = report.Count(r => r.ComplianceStatus == "At Risk"),
-            NonCompliant = report.Count(r => r.ComplianceStatus == "Non-Compliant"),
-            GeneratedAt = DateTime.UtcNow
-        };
-
-        return Ok(new { summary, staff = report });
+        return Ok(report);
     }
 
-    // GET api/report/expiring?days=30
     [HttpGet("expiring")]
-    public async Task<IActionResult> GetExpiringReport([FromQuery] int days = 30)
+    public async Task<IActionResult> GetExpiring([FromQuery] int days = 30)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var cutoff = today.AddDays(days);
+        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(days));
+        var today  = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        var expiring = await _db.Credentials
+        var credentials = await _db.Credentials
             .Include(c => c.StaffMember)
             .Include(c => c.CredentialType)
             .Where(c =>
@@ -87,66 +58,138 @@ public class ReportController : ControllerBase
             .Select(c => new
             {
                 c.Id,
-                StaffMember = $"{c.StaffMember.FirstName} {c.StaffMember.LastName}",
+                StaffMember    = $"{c.StaffMember.FirstName} {c.StaffMember.LastName}",
                 c.StaffMember.Department,
                 CredentialType = c.CredentialType.Name,
                 c.ExpiryDate,
-                DaysUntilExpiry = c.ExpiryDate.DayNumber - today.DayNumber,
-                c.Status
+                DaysUntilExpiry = c.ExpiryDate.DayNumber - today.DayNumber
             })
             .ToListAsync();
 
-        return Ok(new
-        {
-            GeneratedAt = DateTime.UtcNow,
-            DaysAhead = days,
-            Count = expiring.Count,
-            Items = expiring
-        });
+        return Ok(credentials);
     }
 
-    // GET api/report/department
     [HttpGet("department")]
-    public async Task<IActionResult> GetDepartmentReport()
+    public async Task<IActionResult> GetByDepartment()
     {
-        var report = await _db.StaffMembers
+        var data = await _db.StaffMembers
             .Include(s => s.Credentials)
             .Where(s => s.OrganizationId == OrgId && s.IsActive)
             .GroupBy(s => s.Department)
             .Select(g => new
             {
                 Department = g.Key,
-                TotalStaff = g.Count(),
-                TotalCredentials = g.Sum(s => s.Credentials.Count),
-                Expired = g.Sum(s => s.Credentials.Count(c => c.Status == "Expired")),
-                Expiring = g.Sum(s => s.Credentials.Count(c => c.Status == "Expiring")),
-                Active = g.Sum(s => s.Credentials.Count(c => c.Status == "Active"))
+                StaffCount = g.Count(),
+                Expired    = g.Sum(s => s.Credentials.Count(c => c.Status == "Expired")),
+                Expiring   = g.Sum(s => s.Credentials.Count(c => c.Status == "Expiring")),
+                Active     = g.Sum(s => s.Credentials.Count(c => c.Status == "Active"))
             })
-            .OrderBy(r => r.Department)
+            .OrderBy(d => d.Department)
             .ToListAsync();
 
-        return Ok(new { GeneratedAt = DateTime.UtcNow, Departments = report });
+        return Ok(data);
     }
 
-    // GET api/report/audit
     [HttpGet("audit")]
-    public async Task<IActionResult> GetAuditLog([FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    public async Task<IActionResult> GetAuditLog([FromQuery] int page = 1)
     {
-        var total = await _db.AuditLogs.CountAsync();
-
+        var pageSize = 50;
         var logs = await _db.AuditLogs
-            .OrderByDescending(a => a.CreatedAt)
+            .OrderByDescending(l => l.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
 
-        return Ok(new
+        return Ok(logs);
+    }
+
+    [HttpGet("compliance/export")]
+    public async Task<IActionResult> ExportCompliance()
+    {
+        var staff = await _db.StaffMembers
+            .Include(s => s.Credentials)
+            .Where(s => s.OrganizationId == OrgId && s.IsActive)
+            .ToListAsync();
+
+        var rows = staff.Select(s => new
         {
-            Total = total,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(total / (double)pageSize),
-            Items = logs
-        });
+            Name            = $"{s.FirstName} {s.LastName}",
+            s.Department,
+            Total           = s.Credentials.Count,
+            Active          = s.Credentials.Count(c => c.Status == "Active"),
+            Expiring        = s.Credentials.Count(c => c.Status == "Expiring"),
+            Expired         = s.Credentials.Count(c => c.Status == "Expired"),
+            ComplianceScore = s.Credentials.Count == 0
+                ? 100
+                : (int)((double)s.Credentials.Count(c => c.Status == "Active") / s.Credentials.Count * 100)
+        }).OrderBy(s => s.ComplianceScore);
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Name,Department,Total,Active,Expiring,Expired,Compliance Score");
+        foreach (var r in rows)
+            csv.AppendLine($"{r.Name},{r.Department},{r.Total},{r.Active},{r.Expiring},{r.Expired},{r.ComplianceScore}%");
+
+        return File(System.Text.Encoding.UTF8.GetBytes(csv.ToString()),
+            "text/csv", $"compliance-{DateTime.UtcNow:yyyy-MM-dd}.csv");
+    }
+
+    [HttpGet("expiring/export")]
+    public async Task<IActionResult> ExportExpiring([FromQuery] int days = 30)
+    {
+        var cutoff = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(days));
+        var today  = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var rows = await _db.Credentials
+            .Include(c => c.StaffMember)
+            .Include(c => c.CredentialType)
+            .Where(c =>
+                c.StaffMember.OrganizationId == OrgId &&
+                c.ExpiryDate >= today &&
+                c.ExpiryDate <= cutoff)
+            .OrderBy(c => c.ExpiryDate)
+            .Select(c => new
+            {
+                StaffMember     = $"{c.StaffMember.FirstName} {c.StaffMember.LastName}",
+                c.StaffMember.Department,
+                CredentialType  = c.CredentialType.Name,
+                c.ExpiryDate,
+                DaysUntilExpiry = c.ExpiryDate.DayNumber - today.DayNumber
+            })
+            .ToListAsync();
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Staff Member,Department,Credential Type,Expiry Date,Days Until Expiry");
+        foreach (var r in rows)
+            csv.AppendLine($"{r.StaffMember},{r.Department},{r.CredentialType},{r.ExpiryDate},{r.DaysUntilExpiry}");
+
+        return File(System.Text.Encoding.UTF8.GetBytes(csv.ToString()),
+            "text/csv", $"expiring-{DateTime.UtcNow:yyyy-MM-dd}.csv");
+    }
+
+    [HttpGet("department/export")]
+    public async Task<IActionResult> ExportDepartment()
+    {
+        var rows = await _db.StaffMembers
+            .Include(s => s.Credentials)
+            .Where(s => s.OrganizationId == OrgId && s.IsActive)
+            .GroupBy(s => s.Department)
+            .Select(g => new
+            {
+                Department = g.Key,
+                StaffCount = g.Count(),
+                Active     = g.Sum(s => s.Credentials.Count(c => c.Status == "Active")),
+                Expiring   = g.Sum(s => s.Credentials.Count(c => c.Status == "Expiring")),
+                Expired    = g.Sum(s => s.Credentials.Count(c => c.Status == "Expired"))
+            })
+            .OrderBy(d => d.Department)
+            .ToListAsync();
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Department,Staff Count,Active,Expiring,Expired");
+        foreach (var r in rows)
+            csv.AppendLine($"{r.Department},{r.StaffCount},{r.Active},{r.Expiring},{r.Expired}");
+
+        return File(System.Text.Encoding.UTF8.GetBytes(csv.ToString()),
+            "text/csv", $"department-{DateTime.UtcNow:yyyy-MM-dd}.csv");
     }
 }

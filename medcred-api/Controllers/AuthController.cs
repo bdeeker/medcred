@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
@@ -30,11 +31,10 @@ public class AuthController : ControllerBase
         _db = db;
     }
 
-    // POST api/auth/register
+    [AllowAnonymous]
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterDto dto)
     {
-        // Create org first
         var org = new Organization
         {
             Name = dto.OrganizationName,
@@ -44,7 +44,6 @@ public class AuthController : ControllerBase
         _db.Organizations.Add(org);
         await _db.SaveChangesAsync();
 
-        // Create user
         var user = new AppUser
         {
             UserName = dto.Email,
@@ -60,7 +59,7 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Registration successful", orgId = org.Id });
     }
 
-    // POST api/auth/login
+    [AllowAnonymous]
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginDto dto)
     {
@@ -109,6 +108,5 @@ public class AuthController : ControllerBase
     }
 }
 
-// DTOs
 public record RegisterDto(string OrganizationName, string Email, string Password);
 public record LoginDto(string Email, string Password);
